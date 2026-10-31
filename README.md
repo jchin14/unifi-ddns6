@@ -54,8 +54,9 @@ To run this script, you need to set up the appropriate environment variables bas
 | Variable             | Description                                                                                                             |
 |:---------------------|:------------------------------------------------------------------------------------------------------------------------|
 | UNIFI_CONTROLLER_URL | The URL of your UniFi controller (e.g., https://192.168.0.1).<br/> If not provided, it defaults to https://192.168.0.1. |
-| UNIFI_GATEWAY_MODEL  | Optional. Only match a gateway with this model code (e.g. UDRULT). If not provided, the first UniFi OS console is used. |
+| UNIFI_GATEWAY_MODEL  | Optional. Only match a gateway with this model code (e.g. UDRULT). If not provided, the first console with a WAN is used. |
 | UNIFI_SITE_NAME      | The name of your UniFi site (e.g., default). If not provided, it defaults to default.                                   |
+| UNIFI_WAN            | Optional. Which WAN to publish: `wan1` (primary, default), `wan2`, ...                                                  |
 | UNIFI_API_USERNAME   | A local UniFi OS user. The **View Only** role is enough.                                                                |
 | UNIFI_API_PASSWORD   | Your UniFi OS password.                                                                                                 |
 
@@ -89,6 +90,7 @@ export UNIFI_API_PASSWORD="your-unifi-password"
 | CLOUDFLARE_ZONE_ID     | The ID of the DNS zone you are managing (zone Overview page, right sidebar).                      |
 | CLOUDFLARE_RECORD_NAME | The name of the AAAA record to update (e.g., ddns.example.com).                                   |
 | CLOUDFLARE_UPDATE_IPV4 | Optional. Set to `true` to also keep the A record of the same name pointed at your public IPv4.   |
+| CLOUDFLARE_UPDATE_IPV6 | Optional. Defaults to `true`. Set to `false` for an IPv4-only record, e.g. a WAN without IPv6.    |
 
 Example:
 
@@ -115,6 +117,18 @@ address isn't reachable from the internet. With `CLOUDFLARE_UPDATE_IPV4=true` th
 IPv4 address. If you enable this, remove the same hostname from UniFi's built-in Dynamic DNS, or the two will keep
 overwriting each other.
 
+**Multiple WANs:** run the script once per hostname with a different `UNIFI_WAN`. The public IPv4 lookup is sent from
+that WAN's own interface address, so each record gets its own WAN's address and doesn't follow failover. IPv6
+and IPv4 are handled independently: if one can't be found, the other is still updated (and the run exits `1`).
+For example, an IPv4-only record for a secondary WAN:
+
+```bash
+export UNIFI_WAN=wan2
+export CLOUDFLARE_RECORD_NAME="secondary.example.com"
+export CLOUDFLARE_UPDATE_IPV4=true
+export CLOUDFLARE_UPDATE_IPV6=false
+```
+
 ### DynDNS (Dyn | IPv64.net | No-IP | Others )
 
 | Variable          | Description                                                              |
@@ -138,8 +152,8 @@ export UNIFI_API_PASSWORD="your-unifi-password"
 
 ## Running on the UniFi OS Console
 
-The [`unifi-os/`](unifi-os/) folder installs the script on the console itself (Cloudflare only): a systemd timer
-that runs every 2 minutes, plus a helper that prompts for your credentials and stores them in a root-only file. See
+The [`unifi-os/`](unifi-os/) folder installs the script on the console itself (Cloudflare only): one systemd timer
+per hostname that runs every 2 minutes, plus a helper that prompts for settings and stores them in a root-only file. See
 [unifi-os/README.md](unifi-os/README.md).
 
 ## Exit Status
