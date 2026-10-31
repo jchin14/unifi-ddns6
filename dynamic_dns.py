@@ -23,6 +23,7 @@ import json
 import os
 import sys
 import requests
+import requests.adapters
 import urllib3
 
 # Define required environment variables for each provider
@@ -159,29 +160,48 @@ class UnifiAPIClient:
             self.session.close()
             self.logged_in = False
 
-    def get_wan_ipv4_address(self):
+    @staticmethod
+    def wan_ipv4_address(wan_data: dict | None) -> str | None:
         """
-        Retrieves the WAN IPv4 address from the UniFi controller.
-
-        This method is currently not yet implemented and serves as a placeholder.
-        It will always return the loopback address.
-
-        Returns:
-            str: The IPv4 loopback address "127.0.0.1".
+        Returns the IPv4 address on the WAN interface from get_wan() data. Behind CGNAT or an
+        upstream router this is not the public address, but it is used to send the public
+        address lookup out of that WAN.
         """
+        address = (wan_data or {}).get('ip')
+        if not address:
+            print("Could not find a WAN IPv4 address for this WAN.")
+        return address or None
 
-        print("WAN IPv4 retrieval not yet implemented. Returning placeholder '127.0.0.1'.")
-        return "127.0.0.1"
-
-    def get_wan_ipv6_address(self):
+    @staticmethod
+    def wan_ipv6_address(wan_data: dict | None) -> str | None:
         """
-        Retrieves the WAN IPv6 address from the UniFi controller using the authenticated session.
+        Picks the first non-link-local IPv6 address from get_wan() data.
+        """
+        for ipv6 in (wan_data or {}).get('ipv6') or []:
+            if not ipv6.startswith('fe80:'):
+                print(f"Found WAN IPv6 address: {ipv6}")
+                return ipv6
+        print("Could not find a WAN IPv6 address for this WAN.")
+        return None
+
+    def get_wan_ipv6_address(self, wan: str = "wan1") -> str | None:
+        """
+        Retrieves the WAN IPv6 address (e.g., "2001:db8::1") of the given WAN, or None.
+        """
+        return self.wan_ipv6_address(self.get_wan(wan))
+
+    def get_wan(self, wan: str = "wan1") -> dict | None:
+        """
+        Retrieves one WAN's details from the gateway using the authenticated session.
 
         This method queries the '/stat/device' endpoint to get detailed information
-        about all devices, identifies the gateway, and then extracts its WAN IPv6 address.
+        about all devices, identifies the gateway, and returns the data for the requested WAN.
+
+        Args:
+            wan (str): Which WAN to return: 'wan1' (primary), 'wan2', ...
 
         Returns:
-            str or None: The WAN IPv6 address (e.g., "2001:db8::1") if found, otherwise None.
+            dict or None: The WAN data (including 'ip' and 'ipv6') if found, otherwise None.
         """
 
         if not self.logged_in:
@@ -194,7 +214,7 @@ class UnifiAPIClient:
             # No X-API-Key header needed when using session-based authentication
         }
 
-        print(f"Attempting to fetch WAN IPv6 address from {device_url}...")
+        print(f"Attempting to fetch {wan} details from {device_url}...")
         try:
             response = self.session.get(device_url, headers=headers, timeout=10)
             response.raise_for_status()  # Raise an exception for HTTP errors (4xx or 5xx)
@@ -212,7 +232,7 @@ class UnifiAPIClient:
                     # Any UniFi OS console (UDR7, UCG Ultra, ...) reports type 'udm', including ones used only
                     # as access points (e.g. a UX7 in AP mode), so also require WAN data; optionally pin a model
                     wanted_model = os.getenv("UNIFI_GATEWAY_MODEL", "").upper()
-                    if (device_type == 'udm' and isinstance(device.get('wan1'), dict)
+                    if (device_type == 'udm' and isinstance(device.get(wan), dict)
                             and (not wanted_model or device_model == wanted_model)):
                         found_gateway = device
                         print(f"Found potential gateway device: {device.get('name', device.get('mac'))} "
@@ -220,43 +240,30 @@ class UnifiAPIClient:
                         break
 
             if found_gateway:
-                # Now search for IPv6 within the found_gateway
-                if 'wan1' in found_gateway:
-                    if 'ipv6' in found_gateway['wan1'] and isinstance(found_gateway['wan1']['ipv6'], list):
-                        ipv6_list = found_gateway['wan1']['ipv6']
-                        for ipv6 in ipv6_list:
-                            if not ipv6.startswith('fe80:'):
-                                print(f"Found WAN IPv6 address: {ipv6}")
-                                return ipv6
-
-                print(f"Identified gateway '{found_gateway.get('name', found_gateway.get('mac'))}' "
-                      f"but could not find a WAN IPv6 address within its data.")
-                # print("Consider checking the exact JSON structure of the gateway's data for IPv6 details.")
-                # print("Gateway data for debugging:", json.dumps(found_gateway, indent=2))
-                return None
+                return found_gateway[wan]
             else:
-                print("UniFi Cloud Gateway (or specified model) not found among devices in the API response.")
+                print(f"UniFi gateway with {wan} (or specified model) not found among devices in the API response.")
                 # Print full data for debugging if no gateway found at all
                 # if data and 'data' in data:
                 #    print("Full device data for debugging:", json.dumps(data['data'], indent=2))
                 return None
 
         except requests.exceptions.HTTPError as e:
-            print(f"HTTP error fetching WAN IPv6 address: {e}")
+            print(f"HTTP error fetching {wan} details: {e}")
             print(f"Response content: {e.response.text}")
             # If an authentication token expires, try to log in again
             if e.response.status_code == 401:
                 print("Authentication failed (401). Session might have expired. Attempting to re-login.")
                 self.logged_in = False  # Mark as not logged in
                 if self.login():  # Try to log in again
-                    return self.get_wan_ipv6_address()  # Retry the request
+                    return self.get_wan(wan)  # Retry the request
             return None
         except requests.exceptions.ConnectionError as e:
-            print(f"Connection error fetching WAN IPv6 address: {e}")
+            print(f"Connection error fetching {wan} details: {e}")
             print("Please check the controller URL and ensure the UniFi controller is reachable.")
             return None
         except requests.exceptions.Timeout:
-            print("WAN IPv6 address request timed out.")
+            print(f"{wan} details request timed out.")
             return None
         except json.JSONDecodeError:
             print("Failed to decode JSON response from UniFi controller. Response might not be valid JSON.")
@@ -574,7 +581,22 @@ class DynDNSClient:
         return False
 
 
-def get_public_ipv4() -> str | None:
+class SourceAddressAdapter(requests.adapters.HTTPAdapter):
+    """
+    Sends requests from a specific local address. On a multi-WAN gateway this picks the WAN,
+    since UniFi OS routes traffic by source address.
+    """
+
+    def __init__(self, source_address: str, **kwargs):
+        self.source_address = source_address
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, *args, **kwargs):
+        kwargs["source_address"] = (self.source_address, 0)
+        super().init_poolmanager(*args, **kwargs)
+
+
+def get_public_ipv4(source_address: str | None = None) -> str | None:
     """
     Asks Cloudflare which IPv4 address this host reaches the internet from.
 
@@ -582,12 +604,18 @@ def get_public_ipv4() -> str | None:
     (100.64.0.0/10) or an upstream router is not reachable from the internet.
     Connecting to 1.1.1.1 by IP forces the lookup over IPv4.
 
+    Args:
+        source_address (str): Optional local address to send the lookup from (selects the WAN).
+
     Returns:
         str or None: The public IPv4 address, or None if it could not be determined
         or is not a globally routable address.
     """
+    session = requests.Session()
+    if source_address:
+        session.mount("https://", SourceAddressAdapter(source_address))
     try:
-        response = requests.get("https://1.1.1.1/cdn-cgi/trace", timeout=10)
+        response = session.get("https://1.1.1.1/cdn-cgi/trace", timeout=10)
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         print(f"Error looking up public IPv4 address: {e}")
@@ -639,8 +667,16 @@ def main():
     unifi_controller_url = os.getenv("UNIFI_CONTROLLER_URL", "https://192.168.0.1")
     unifi_site_name = os.getenv("UNIFI_SITE_NAME", "default")
 
-    # Get the current IP address
+    # Which WAN to publish, and which record types (IPv6-only toggle is Cloudflare only)
+    unifi_wan = os.getenv("UNIFI_WAN", "wan1")
+    update_ipv6 = dns_provider != "Cloudflare" or os.getenv("CLOUDFLARE_UPDATE_IPV6", "true").lower() == "true"
+    update_ipv4 = dns_provider == "Cloudflare" and os.getenv("CLOUDFLARE_UPDATE_IPV4", "false").lower() == "true"
+    if not (update_ipv6 or update_ipv4):
+        raise EnvironmentError("Both CLOUDFLARE_UPDATE_IPV6 and CLOUDFLARE_UPDATE_IPV4 are off. Nothing to do.")
+
+    # Get the current IP addresses
     current_ip = None
+    wan_ipv4 = None
     unifi_api_client = UnifiAPIClient(
         controller_url=unifi_controller_url,
         site_name=unifi_site_name,
@@ -650,11 +686,15 @@ def main():
     )
 
     if unifi_api_client.login():
-        # IPv6 address
-        current_ip = unifi_api_client.get_wan_ipv6_address()
+        wan_data = unifi_api_client.get_wan(unifi_wan)
         unifi_api_client.logout()
+        if update_ipv6:
+            current_ip = unifi_api_client.wan_ipv6_address(wan_data)
+        if update_ipv4:
+            wan_ipv4 = unifi_api_client.wan_ipv4_address(wan_data)
 
-    if not current_ip:
+    # IPv6 and IPv4 are handled independently, so stop only if neither is available
+    if not (current_ip or wan_ipv4):
         print("Could not retrieve current IP address. Exiting.")
         sys.exit(1)
 
@@ -671,14 +711,16 @@ def main():
             api_token=env_values["CLOUDFLARE_API_TOKEN"],
             zone_id=env_values["CLOUDFLARE_ZONE_ID"]
         )
-        ok = cf_client.update_aaaa_record(
-            record_name=env_values["CLOUDFLARE_RECORD_NAME"],
-            new_ipv6_address=current_ip
-        )
+        ok = True
+        if update_ipv6:
+            ok = current_ip is not None and cf_client.update_aaaa_record(
+                record_name=env_values["CLOUDFLARE_RECORD_NAME"],
+                new_ipv6_address=current_ip
+            )
 
-        # Optionally keep the A record on the same name pointed at the public IPv4 address
-        if os.getenv("CLOUDFLARE_UPDATE_IPV4", "false").lower() == "true":
-            public_ipv4 = get_public_ipv4()
+        # Optionally keep the A record on the same name pointed at this WAN's public IPv4 address
+        if update_ipv4:
+            public_ipv4 = get_public_ipv4(source_address=wan_ipv4) if wan_ipv4 else None
             ipv4_ok = public_ipv4 is not None and cf_client.update_a_record(
                 record_name=env_values["CLOUDFLARE_RECORD_NAME"],
                 new_ipv4_address=public_ipv4
