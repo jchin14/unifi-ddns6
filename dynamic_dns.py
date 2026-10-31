@@ -222,8 +222,8 @@ class UnifiAPIClient:
                         ipv6_list = found_gateway['wan1']['ipv6']
                         for ipv6 in ipv6_list:
                             if not ipv6.startswith('fe80:'):
-                                print(f"Found WAN IPv6 address: {found_gateway['wan1']['ipv6'][0]}")
-                                return found_gateway['wan1']['ipv6'][0]
+                                print(f"Found WAN IPv6 address: {ipv6}")
+                                return ipv6
 
                 print(f"Identified gateway '{found_gateway.get('name', found_gateway.get('mac'))}' "
                       f"but could not find a WAN IPv6 address within its data.")
