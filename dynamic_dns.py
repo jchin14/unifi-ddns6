@@ -14,6 +14,9 @@
 #
 #  SPDX-License-Identifier: Apache-2.0
 
+# Python 3.9 (UniFi OS) can't evaluate "str | None" annotations without this
+from __future__ import annotations
+
 import argparse
 import json
 import os
