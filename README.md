@@ -37,6 +37,7 @@ To run this script, you need to set up the appropriate environment variables bas
 | Variable             | Description                                                                                                             |
 |:---------------------|:------------------------------------------------------------------------------------------------------------------------|
 | UNIFI_CONTROLLER_URL | The URL of your UniFi controller (e.g., https://192.168.0.1).<br/> If not provided, it defaults to https://192.168.0.1. |
+| UNIFI_GATEWAY_MODEL  | Optional. Only match a gateway with this model code (e.g. UDRULT). If not provided, the first UniFi OS console is used. |
 | UNIFI_SITE_NAME      | The name of your UniFi site (e.g., default). If not provided, it defaults to default.                                   |
 | UNIFI_API_USERNAME   | Your UniFi OS username with read-only API access.                                                                       |
 | UNIFI_API_PASSWORD   | Your UniFi OS password.                                                                                                 |
