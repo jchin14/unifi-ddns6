@@ -14,7 +14,8 @@ scp dynamic_dns.py unifi-os/install.sh unifi-os/set-secrets.sh root@<gateway-ip>
 ```
 
 The script talks to the local API at `https://127.0.0.1` and only writes to
-Cloudflare when the AAAA record differs from the current WAN IPv6 address.
+Cloudflare when the AAAA record differs from the current WAN IPv6 address. If
+the record doesn't exist yet, it is created (DNS only, automatic TTL).
 
 Logs: `journalctl -u unifi-ddns6`. Next run: `systemctl list-timers unifi-ddns6.timer`.
 

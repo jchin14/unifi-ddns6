@@ -296,27 +296,74 @@ class CloudflareDNSClient:
             tuple[str, str] | tuple[None, None]: A tuple containing the record ID and its content (IP address) if found,
             otherwise (None, None).
         """
+        try:
+            record = self._find_record(record_name, record_type)
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching record ID: {e}")
+            return None, None
+
+        if record is None:
+            print(f"Could not find {record_type} record with name: {record_name}")
+            return None, None
+        return record["id"], record["content"]
+
+    def _find_record(self, record_name: str, record_type: str) -> dict | None:
+        """
+        Looks up a DNS record, distinguishing "not found" (returns None) from a failed
+        lookup (raises), so callers never create a duplicate record after an API error.
+        """
         params = {
             "type": record_type,
             "name": record_name
         }
+        response = requests.get(self.api_url, headers=self.headers, params=params, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+
+        if not data["success"]:
+            raise requests.exceptions.RequestException(f"Cloudflare API errors: {data['errors']}")
+        if not data["result"]:
+            return None
+
+        record = data["result"][0]
+        print(f"Found record ID: {record['id']} with current IP: {record['content']}")
+        return record
+
+    def create_record(self, record_name: str, record_type: str, content: str, proxied: bool = False) -> bool:
+        """
+        Creates a new DNS record.
+
+        Args:
+            record_name (str): The name of the record to create (e.g., 'home.example.com').
+            record_type (str): The type of the record (e.g., 'A', 'AAAA').
+            content (str): The IP address for the record.
+            proxied (bool): Whether to enable Cloudflare's proxy (orange cloud). Defaults to False.
+
+        Returns:
+            bool: True if the record was created, False otherwise.
+        """
+        payload = {
+            "type": record_type,
+            "name": record_name,
+            "content": content,
+            "ttl": 1,  # automatic
+            "proxied": proxied
+        }
+
         try:
-            response = requests.get(self.api_url, headers=self.headers, params=params)
+            response = requests.post(self.api_url, headers=self.headers, data=json.dumps(payload), timeout=15)
             response.raise_for_status()
             data = response.json()
 
-            if data["success"] and data["result"]:
-                record = data["result"][0]
-                record_id = record["id"]
-                current_ip = record["content"]
-                print(f"Found record ID: {record_id} with current IP: {current_ip}")
-                return record_id, current_ip
+            if data["success"]:
+                print(f"Created {record_type} record '{record_name}' with '{content}'.")
+                return True
             else:
-                print(f"Could not find {record_type} record with name: {record_name}")
-                return None, None
+                print(f"Failed to create {record_type} record. Errors: {data['errors']}")
+                return False
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching record ID: {e}")
-            return None, None
+            print(f"Error creating record: {e}")
+            return False
 
     def update_a_record(self, record_name: str, new_ipv4_address: str, proxied: bool = False) -> bool:
         """
@@ -366,9 +413,17 @@ class CloudflareDNSClient:
         Returns:
             bool: True if the update was successful, False otherwise.
         """
-        record_id, current_ip = self.get_record_id(record_name, "AAAA")
-        if not record_id:
+        try:
+            record = self._find_record(record_name, "AAAA")
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching record ID: {e}")
             return False
+
+        if record is None:
+            print(f"No AAAA record named '{record_name}' yet. Creating it.")
+            return self.create_record(record_name, "AAAA", new_ipv6_address, proxied)
+
+        record_id, current_ip = record["id"], record["content"]
 
         # Check if the IP has changed before updating
         if current_ip == new_ipv6_address:
