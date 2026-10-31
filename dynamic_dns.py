@@ -365,94 +365,64 @@ class CloudflareDNSClient:
             print(f"Error creating record: {e}")
             return False
 
-    def update_a_record(self, record_name: str, new_ipv4_address: str, proxied: bool = False) -> bool:
+    def upsert_record(self, record_name: str, record_type: str, new_ip_address: str, proxied: bool = False) -> bool:
         """
-        Updates an A record with a new IPv4 address.
-        """
-        record_id, current_ip = self.get_record_id(record_name, "A")
-        if not record_id:
-            return False
-
-        if current_ip == new_ipv4_address:
-            print("IPv4 address has not changed. No update needed.")
-            return True
-
-        update_url = f"{self.api_url}/{record_id}"
-
-        payload = {
-            "type": "A",
-            "name": record_name,
-            "content": new_ipv4_address,
-            "proxied": proxied
-        }
-
-        try:
-            response = requests.put(update_url, headers=self.headers, data=json.dumps(payload))
-            response.raise_for_status()
-            data = response.json()
-
-            if data["success"]:
-                print(f"Successfully updated A record '{record_name}' to '{new_ipv4_address}'.")
-                return True
-            else:
-                print(f"Failed to update A record. Errors: {data['errors']}")
-                return False
-        except requests.exceptions.RequestException as e:
-            print(f"Error updating record: {e}")
-            return False
-
-    def update_aaaa_record(self, record_name: str, new_ipv6_address: str, proxied: bool = False) -> bool:
-        """
-        Updates an AAAA record with a new IPv6 address.
+        Points an A/AAAA record at new_ip_address, creating the record if it does not exist.
+        Existing records are patched so their proxy status, TTL and comment are kept.
 
         Args:
-            record_name (str): The name of the AAAA record to update.
-            new_ipv6_address (str): The new IPv6 address for the record.
-            proxied (bool): Whether to enable Cloudflare's proxy (orange cloud). Defaults to False.
+            record_name (str): The name of the record (e.g., 'home.example.com').
+            record_type (str): 'A' or 'AAAA'.
+            new_ip_address (str): The IP address the record should point to.
+            proxied (bool): Proxy status for a newly created record. Defaults to False.
 
         Returns:
-            bool: True if the update was successful, False otherwise.
+            bool: True if the record is now up to date, False otherwise.
         """
         try:
-            record = self._find_record(record_name, "AAAA")
+            record = self._find_record(record_name, record_type)
         except requests.exceptions.RequestException as e:
             print(f"Error fetching record ID: {e}")
             return False
 
         if record is None:
-            print(f"No AAAA record named '{record_name}' yet. Creating it.")
-            return self.create_record(record_name, "AAAA", new_ipv6_address, proxied)
-
-        record_id, current_ip = record["id"], record["content"]
+            print(f"No {record_type} record named '{record_name}' yet. Creating it.")
+            return self.create_record(record_name, record_type, new_ip_address, proxied)
 
         # Check if the IP has changed before updating
-        if current_ip == new_ipv6_address:
-            print("IP address has not changed. No update needed.")
+        if record["content"] == new_ip_address:
+            print(f"{record_type} record already points to {new_ip_address}. No update needed.")
             return True
 
-        update_url = f"{self.api_url}/{record_id}"
-
-        payload = {
-            "type": "AAAA",
-            "name": record_name,
-            "content": new_ipv6_address,
-            "proxied": proxied
-        }
+        update_url = f"{self.api_url}/{record['id']}"
 
         try:
-            response = requests.put(update_url, headers=self.headers, data=json.dumps(payload))
+            response = requests.patch(update_url, headers=self.headers,
+                                      data=json.dumps({"content": new_ip_address}), timeout=15)
             response.raise_for_status()
             data = response.json()
 
             if data["success"]:
-                print(f"Successfully updated AAAA record '{record_name}' to '{new_ipv6_address}'.")
+                print(f"Successfully updated {record_type} record '{record_name}' to '{new_ip_address}'.")
                 return True
             else:
-                print(f"Failed to update AAAA record. Errors: {data['errors']}")
+                print(f"Failed to update {record_type} record. Errors: {data['errors']}")
                 return False
         except requests.exceptions.RequestException as e:
             print(f"Error updating record: {e}")
             return False
+
+    def update_a_record(self, record_name: str, new_ipv4_address: str, proxied: bool = False) -> bool:
+        """
+        Updates (or creates) an A record with a new IPv4 address.
+        """
+        return self.upsert_record(record_name, "A", new_ipv4_address, proxied)
+
+    def update_aaaa_record(self, record_name: str, new_ipv6_address: str, proxied: bool = False) -> bool:
+        """
+        Updates (or creates) an AAAA record with a new IPv6 address.
+        """
+        return self.upsert_record(record_name, "AAAA", new_ipv6_address, proxied)
 
 
 class HurricaneElectricDNSClient:
