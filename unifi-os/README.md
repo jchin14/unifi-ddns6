@@ -17,6 +17,10 @@ The script talks to the local API at `https://127.0.0.1` and only writes to
 Cloudflare when the AAAA record differs from the current WAN IPv6 address. If
 the record doesn't exist yet, it is created (DNS only, automatic TTL).
 
+If you answer yes to the IPv4 question, the A record of the same name is kept
+pointed at your public IPv4 address too. Turn off UniFi's built-in Dynamic DNS
+for that hostname, or the two will keep overwriting each other.
+
 Logs: `journalctl -u unifi-ddns6`. Next run: `systemctl list-timers unifi-ddns6.timer`.
 
 Everything lives in `/data`, which survives firmware updates. The systemd units
