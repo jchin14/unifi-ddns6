@@ -209,9 +209,11 @@ class UnifiAPIClient:
                     device_type = device.get('type')
                     device_model = device.get('model', '').upper()  # Convert to uppercase for consistent comparison
 
-                    # Any UniFi OS console (UDR7, UCG Ultra, ...) reports type 'udm'; optionally pin a model
+                    # Any UniFi OS console (UDR7, UCG Ultra, ...) reports type 'udm', including ones used only
+                    # as access points (e.g. a UX7 in AP mode), so also require WAN data; optionally pin a model
                     wanted_model = os.getenv("UNIFI_GATEWAY_MODEL", "").upper()
-                    if device_type == 'udm' and (not wanted_model or device_model == wanted_model):
+                    if (device_type == 'udm' and isinstance(device.get('wan1'), dict)
+                            and (not wanted_model or device_model == wanted_model)):
                         found_gateway = device
                         print(f"Found potential gateway device: {device.get('name', device.get('mac'))} "
                               f"(Type: {device_type}, Model: {device_model})")
