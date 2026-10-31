@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import sys
@@ -571,6 +572,41 @@ class DynDNSClient:
         return False
 
 
+def get_public_ipv4() -> str | None:
+    """
+    Asks Cloudflare which IPv4 address this host reaches the internet from.
+
+    The UniFi API only knows the WAN interface address, which behind CGNAT
+    (100.64.0.0/10) or an upstream router is not reachable from the internet.
+    Connecting to 1.1.1.1 by IP forces the lookup over IPv4.
+
+    Returns:
+        str or None: The public IPv4 address, or None if it could not be determined
+        or is not a globally routable address.
+    """
+    try:
+        response = requests.get("https://1.1.1.1/cdn-cgi/trace", timeout=10)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Error looking up public IPv4 address: {e}")
+        return None
+
+    for line in response.text.splitlines():
+        if line.startswith("ip="):
+            try:
+                address = ipaddress.ip_address(line[3:].strip())
+            except ValueError:
+                break
+            if address.version == 4 and address.is_global:
+                print(f"Found public IPv4 address: {address}")
+                return str(address)
+            print(f"Refusing to publish {address}: not a public IPv4 address.")
+            return None
+
+    print("Could not parse public IPv4 address from Cloudflare trace.")
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="UniFi IPv6 Dynamic DNS Updater")
     parser.add_argument(
@@ -637,6 +673,15 @@ def main():
             record_name=env_values["CLOUDFLARE_RECORD_NAME"],
             new_ipv6_address=current_ip
         )
+
+        # Optionally keep the A record on the same name pointed at the public IPv4 address
+        if os.getenv("CLOUDFLARE_UPDATE_IPV4", "false").lower() == "true":
+            public_ipv4 = get_public_ipv4()
+            ipv4_ok = public_ipv4 is not None and cf_client.update_a_record(
+                record_name=env_values["CLOUDFLARE_RECORD_NAME"],
+                new_ipv4_address=public_ipv4
+            )
+            ok = ok and ipv4_ok
 
     elif dns_provider == "DynDNS":
         dyndns_client = DynDNSClient(

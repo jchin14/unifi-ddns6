@@ -71,6 +71,7 @@ export UNIFI_API_PASSWORD="your-unifi-password"
 | CLOUDFLARE_API_TOKEN   | A Cloudflare API token with Zone > DNS > Edit permissions for your zone. |
 | CLOUDFLARE_ZONE_ID     | The ID of the DNS zone you are managing.                                 |
 | CLOUDFLARE_RECORD_NAME | The name of the AAAA record to update (e.g., ddns.example.com). Created if it does not exist. |
+| CLOUDFLARE_UPDATE_IPV4 | Optional. Set to `true` to also keep the A record of the same name pointed at the public IPv4 address (as seen by Cloudflare, so it works behind CGNAT or an upstream router). |
 
 Example:
 
