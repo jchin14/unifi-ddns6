@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import requests
 import urllib3
 
@@ -592,7 +593,7 @@ def main():
 
     if not current_ip:
         print("Could not retrieve current IP address. Exiting.")
-        return
+        sys.exit(1)
 
     # Initialize and use the correct DNS client based on the provider
     if dns_provider == "HE":
@@ -600,14 +601,14 @@ def main():
             hostname=env_values["HE_HOSTNAME"],
             password=env_values["HE_PASSWORD"]
         )
-        he_client.update_dns(ip=current_ip)
+        ok = he_client.update_dns(ip=current_ip)
 
     elif dns_provider == "Cloudflare":
         cf_client = CloudflareDNSClient(
             api_token=env_values["CLOUDFLARE_API_TOKEN"],
             zone_id=env_values["CLOUDFLARE_ZONE_ID"]
         )
-        cf_client.update_aaaa_record(
+        ok = cf_client.update_aaaa_record(
             record_name=env_values["CLOUDFLARE_RECORD_NAME"],
             new_ipv6_address=current_ip
         )
@@ -619,10 +620,15 @@ def main():
             password=env_values["DYNDNS_PASSWORD"],
             update_url=env_values["DYNDNS_UPDATE_URL"]
         )
-        dyndns_client.update_dns(ipv6=current_ip)
+        ok = dyndns_client.update_dns(ipv6=current_ip)
 
     else:
         print(f"Unknown DNS provider: {dns_provider}")
+        ok = False
+
+    # Non-zero exit so schedulers (cron, systemd) can see failed runs
+    if not ok:
+        sys.exit(1)
 
 
 if __name__ == '__main__':
