@@ -55,7 +55,7 @@ another router isn't reachable.
 
 ## How it runs
 
-* Starts 2 minutes after boot, then every 2 minutes, for each hostname.
+* Starts 4 minutes after boot, then every 4 minutes, for each hostname.
 * Uses the local API at `https://127.0.0.1`, so it keeps working if the console's LAN IP changes.
 * The public IPv4 lookup goes out of the chosen WAN, so each record keeps its own WAN's address during failover.
 * Only writes to Cloudflare when an address has actually changed.

@@ -153,7 +153,7 @@ export UNIFI_API_PASSWORD="your-unifi-password"
 ## Running on the UniFi OS Console
 
 The [`unifi-os/`](unifi-os/) folder installs the script on the console itself (Cloudflare only): one systemd timer
-per hostname that runs every 2 minutes, plus a helper that prompts for settings and stores them in a root-only file. See
+per hostname that runs every 4 minutes, plus a helper that prompts for settings and stores them in a root-only file. See
 [unifi-os/README.md](unifi-os/README.md).
 
 ## Exit Status

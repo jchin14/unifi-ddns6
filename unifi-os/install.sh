@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installs a systemd timer per hostname that runs the DDNS update every 2 minutes.
+# Installs a systemd timer per hostname that runs the DDNS update every 4 minutes.
 # Each /data/unifi-ddns6/<name>.env gets its own unifi-ddns6@<name>.timer.
 # Everything lives in /data (survives firmware updates); the units in /etc may not,
 # so re-run this after a firmware update if `systemctl list-timers 'unifi-ddns6@*'` is empty.
@@ -22,11 +22,11 @@ EOF
 
 cat > /etc/systemd/system/unifi-ddns6@.timer <<EOF
 [Unit]
-Description=Run UniFi Dynamic DNS update (%i) every 2 minutes
+Description=Run UniFi Dynamic DNS update (%i) every 4 minutes
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=2min
+OnBootSec=4min
+OnUnitActiveSec=4min
 
 [Install]
 WantedBy=timers.target
