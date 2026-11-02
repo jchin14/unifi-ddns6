@@ -21,6 +21,7 @@ import argparse
 import ipaddress
 import json
 import os
+import socket
 import sys
 import requests
 import requests.adapters
@@ -53,6 +54,52 @@ REQUIRED_ENV_VARIABLES = {
 
 # Suppress the InsecureRequestWarning for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Seconds to wait for a server to accept a connection, and then to answer
+CONNECT_TIMEOUT = 3
+READ_TIMEOUT = 15
+
+_ipv6_checked = False
+
+
+def ipv6_reaches(host: str, port: int = 443) -> bool:
+    """
+    Checks whether this host can open a connection to `host` over IPv6.
+
+    Returns True when the host has no IPv6 address (nothing to fall back from), so only a
+    WAN with an IPv6 address and route that doesn't actually get through returns False.
+    """
+    try:
+        infos = socket.getaddrinfo(host, port, socket.AF_INET6, socket.SOCK_STREAM)
+    except socket.gaierror:
+        return True
+    family, sock_type, proto, _, address = infos[0]
+    try:
+        with socket.socket(family, sock_type, proto) as sock:
+            sock.settimeout(CONNECT_TIMEOUT)
+            sock.connect(address)
+        return True
+    except OSError:
+        return False
+
+
+def http_request(method: str, url: str, **kwargs) -> requests.Response:
+    """
+    Sends an outbound request, using IPv4 only for the rest of the run if IPv6 doesn't reach the server.
+
+    Hostnames such as api.cloudflare.com resolve to several IPv6 addresses, which are tried before
+    IPv4. When the WAN has IPv6 but it doesn't route, each one has to time out first, which made
+    runs take longer than the scheduler allows. A single quick IPv6 check up front avoids that.
+    """
+    global _ipv6_checked
+    if not _ipv6_checked:
+        _ipv6_checked = True
+        host = urllib3.util.parse_url(url).host
+        if host and not ipv6_reaches(host):
+            print(f"Could not reach {host} over IPv6. Using IPv4 only.")
+            urllib3.util.connection.allowed_gai_family = lambda: socket.AF_INET
+    kwargs.setdefault("timeout", (CONNECT_TIMEOUT, READ_TIMEOUT))
+    return requests.request(method, url, **kwargs)
 
 
 class UnifiAPIClient:
@@ -326,7 +373,7 @@ class CloudflareDNSClient:
             "type": record_type,
             "name": record_name
         }
-        response = requests.get(self.api_url, headers=self.headers, params=params, timeout=15)
+        response = http_request("GET", self.api_url, headers=self.headers, params=params)
         response.raise_for_status()
         data = response.json()
 
@@ -361,7 +408,7 @@ class CloudflareDNSClient:
         }
 
         try:
-            response = requests.post(self.api_url, headers=self.headers, data=json.dumps(payload), timeout=15)
+            response = http_request("POST", self.api_url, headers=self.headers, data=json.dumps(payload))
             response.raise_for_status()
             data = response.json()
 
@@ -407,8 +454,8 @@ class CloudflareDNSClient:
         update_url = f"{self.api_url}/{record['id']}"
 
         try:
-            response = requests.patch(update_url, headers=self.headers,
-                                      data=json.dumps({"content": new_ip_address}), timeout=15)
+            response = http_request("PATCH", update_url, headers=self.headers,
+                                    data=json.dumps({"content": new_ip_address}))
             response.raise_for_status()
             data = response.json()
 
@@ -472,7 +519,7 @@ class HurricaneElectricDNSClient:
         print(f"Using URL: {self.HE_BASE_URL}")
 
         try:
-            response = requests.post(self.HE_BASE_URL, data=payload)
+            response = http_request("POST", self.HE_BASE_URL, data=payload)
             response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
 
             print(f"DNS Update Successful! Status Code: {response.status_code}")
@@ -537,12 +584,12 @@ class DynDNSClient:
         print(f"Using URL: {self.update_url}")
 
         try:
-            response = requests.post(
+            response = http_request(
+                "POST",
                 self.update_url,
                 data=payload,
                 auth=(self.username, self.password),  # Dual-method auth for maximum compatibility
-                headers=headers,
-                timeout=10
+                headers=headers
             )
             response.raise_for_status()
             response_text = response.text.strip()
