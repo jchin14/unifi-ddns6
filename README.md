@@ -1,30 +1,19 @@
 # UniFi IPv6 Dynamic DNS Updater
 
-A script to update your DNS provider with the current IPv6 address of your UniFi device.
-This tool addresses the common issue where internet service providers (ISPs) may periodically change the IPv6 prefix
-assigned to your home network, causing DNS records to become stale.
+Keeps a DNS record pointed at your UniFi gateway's current WAN IPv6 address, so services stay reachable when your ISP
+changes your prefix. UniFi's built-in Dynamic DNS doesn't support IPv6.
 
-By automatically detecting the current WAN IPv6 address from your UniFi gateway and updating a dynamic DNS record,
-this script ensures your services remain accessible.
-
-With Cloudflare, it can also keep the A record of the same name pointed at your public IPv4 address. Unlike UniFi's
-built-in Dynamic DNS, this uses the address the internet actually sees, so it stays correct behind CGNAT or an upstream
-router.
-
-_NOTE: at this stage, UniFi does not provide direct support for Dynamic DNS with IPv6._
-
-The script runs once and exits, so schedule it (cron, a systemd timer, etc.). It can run on any machine that can reach
-your UniFi console, or [directly on the console itself](#running-on-the-unifi-os-console).
+- **IPv6:** reads the WAN address from your UniFi console and updates the AAAA record.
+- **IPv4 (Cloudflare):** optionally updates the A record with the address the internet actually sees, so it stays
+  correct behind CGNAT or an upstream router.
+- **Runs once and exits:** schedule it with cron or a systemd timer, on any machine that can reach the console or
+  [on the console itself](#running-on-the-unifi-os-console).
 
 ## Supported Providers
 
-Currently, this script supports the following DNS providers:
-
 * Hurricane Electric (HE)
-
 * Cloudflare
-
-* DynDNS (e.g., Dyn, IPv64.net, No-IP, etc.)
+* DynDNS-compatible (Dyn, IPv64.net, No-IP, ...)
 
 ## Tested Devices
 
@@ -45,7 +34,7 @@ include the anonymized output of the script in debug mode (see [Debug Mode](#deb
 
 ## Getting Started
 
-To run this script, you need to set up the appropriate environment variables based on your chosen DNS provider.
+Configure the script with environment variables for UniFi and your DNS provider.
 
 1. **UniFi Configuration**
 
@@ -163,10 +152,7 @@ so cron or systemd can flag failed runs.
 
 ## Debug Mode
 
-You can enable debug mode to troubleshoot connection issues or inspect the raw data returned by your UniFi controller. 
-When enabled, the script will print formatted JSON responses to the terminal.
-
-Debug mode can be activated in two ways (the command line flag takes precedence):
+Prints the raw JSON from your UniFi controller, for troubleshooting. Enable it either way (the flag takes precedence):
 
 -  **Environment Variable:**
     ```bash
@@ -181,4 +167,4 @@ Debug mode can be activated in two ways (the command line flag takes precedence)
 
 ## Contributing
 
-If you wish to contribute or suggest changes, please open an issue or pull request.
+Issues and pull requests are welcome.
